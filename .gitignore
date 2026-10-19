@@ -1,0 +1,22 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local incident evidence, hashes, device reports and audit output
+OpenDrop.zip
+reference_*.json
+diagnostics-*.json
+diagnostics-*.txt
+*diagnostic*.log
+*.jsonl
+reports/
+analyzer-report/
+
+# Compiled artifacts
+*.spec
+build/
+dist/
+*.exe

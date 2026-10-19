@@ -1,185 +1,97 @@
-# Inc Notebook Deleter
+# Inc Notebook Deleter — 증거 기반 보호 진단 및 검증형 파일 삭제
 
-`delete_agent` 저장소에서 표적으로 삼은 파일들을 한 번에 삭제하기 위한 Python 스크립트입니다.
+지원 환경: Windows 10/11, Python 3.10 이상 (별도 `pip install` 불필요).
 
-이 프로젝트는 다음 두 저장소의 아이디어를 결합합니다.
+이 버전은 **2026-10-19 진단 결과에서 확인된 보호 패턴**을 코드 및 테스트에 반영했습니다. 이전 프로그램과 달리 `Everyone: Deny Delete` ACL, 실행 중인 서비스 및 파일 SHA-256 변경 여부를 파일별로 구분합니다. 삭제 옵션은 실제 Windows 파일 삭제 기능을 호출하고 파일이 사라졌는지 재확인합니다. 운영체제 보안 정책과 서비스 자체 보호를 우회하지 않습니다.
 
-- **타겟 목록**: `ji5zi5/delete_agent`의 `삭제.bat`
-- **삭제 전략**: `jsk1004ha/Force_deleter`의 강제 삭제 방식(일반 삭제 → 잠금 프로세스 종료 → 재시도)
+## 1. 보고서에서 확인된 상태 (수집 당시)
 
-## 파일
+| 파일 | ACL: Everyone 명시적 Delete 거부 | 관련 실행 상태 |
+|---|---|---|
+| `lqndauccd.exe` | 확인 | `SvcMayaEC` 서비스 실행 |
+| `ooajphjh.exe` | 확인 | 잠금 프로세스 미보고 |
+| `qukapttp.exe` | 확인 | 프로세스 실행 |
+| `rwtyijsa.exe` | 확인 | `svcMayaDSes` 서비스 실행 |
 
-- `bulk_delete_agent_targets.py`: 메인 실행 스크립트
-- `run-notebook-deleter.cmd`: 실제 Python 설치를 확인하고 실행하는 Windows 실행기
-- `run-diagnostics.cmd`: Python 및 EXE 시작 문제 진단
-- `requirements-build.txt`: EXE 빌드(PyInstaller) 의존성 목록
-- `.github/workflows/build-exe.yml`: GitHub Actions 기반 Windows EXE 자동 빌드
+- 네 파일의 소유자는 `NT AUTHORITY\SYSTEM`이고, 보고서 수집 시에는 **관리자 권한이 아니었습니다**.
+- **명시적 Deny가 Administrator의 Allow보다 우선 적용될 수 있으므로**, 관리자 권한만으로 `WinError 5`가 해결된다고 보장할 수 없습니다.
+- `Restart Manager`에 잠금이 보고되지 않은 파일도 ACL 때문에 삭제가 거부될 수 있습니다.
+- 서명 상태 `Valid`는 해당 파일이 악성코드인지에 대한 최종 판정이 아닙니다.
+- 관련 드라이버 후보 0개라는 결과 역시 보호 드라이버가 존재하지 않는다는 증명은 아닙니다.
+- **코드는 ACL 변경, 소유권 탈취, 서비스·보호 프로세스 종료, 보안 제품 비활성화를 수행하지 않습니다.**
 
-## 요구 사항
+## 2. 시작하기
 
-### 실행
+GitHub 저장소를 다운로드하면 `analyze_protection.cmd`로 바로 읽기 전용 조사를 시작할 수 있습니다. `run_verified_delete.cmd`는 기본적으로 삭제 **미리보기**만 수행합니다. 기존 분석 보고서를 로컬에 `reference_opendrop_20261019.json`이라는 이름으로 별도로 배치하면 두 CMD 실행기가 자동으로 참조하지만, 파일이 없어도 작동합니다. Windows의 `python` 명령이 비정상이라면 `py -3`을 사용합니다.
 
-- Python 3.10+
-- Windows 10/11 권장
-  - Windows에서는 관리자 권한 확인, Restart Manager를 통한 잠금 확인 및 제한된 `taskkill` 재시도를 지원합니다.
-  - 잠금 프로세스는 **삭제 대상 EXE 자체가 실행 중인 경우에만** 종료를 시도합니다. 파일을 열어본 Explorer 등 다른 프로세스는 종료하지 않습니다.
-  - 시스템 디렉터리를 대상으로 할 경우 관리자 권한이 필요합니다. 조직 관리 장치는 관리자 승인 및 정책을 확인하세요.
-  - 비-Windows 환경에서는 일반 파일 삭제만 시도합니다.
+**개인 PC의 파일 해시·PID·서비스 목록 등이 포함된 진단 보고서는 공개 저장소에 포함하지 않습니다.** 과거 ZIP에 들어 있던 보고서를 참조하려면 직접 자신의 컴퓨터에서 `--reference-report "C:\path\to\OpenDrop.zip"`으로 경로를 지정하거나 기존 다운로드 ZIP의 `reference_opendrop_20261019.json`을 사용하세요. 참조 보고서는 선택 사항이며, 제공하지 않아도 미리보기 및 삭제 기능이 작동합니다.
 
-### EXE 빌드
+기존 15개 파일 대상으로 동작하던 구현 `bulk_delete_agent_targets.py`는 하위 호환을 위해 보존했습니다. **권장 새 프로그램은 `verified_delete.py`이며, 새 Windows 빌드 역시 이를 사용합니다.**
 
-- PyInstaller (`requirements-build.txt` 참고)
-- Windows 환경에서 빌드 권장
-  - `.exe`는 Windows에서 빌드하는 것이 가장 안정적입니다.
-
-## `python`을 실행하면 `Python`만 출력될 때
-
-`python bulk_delete_agent_targets.py --dry-run` 명령이 `Python`만 출력하면 스크립트가 실행되지 않았을 가능성이 큽니다. 현재 명령이 **실제 Python 인터프리터가 아닌 Windows 앱 실행 별칭 또는 다른 프로그램**을 가리킬 수 있습니다. 코드 수정을 반복해도 실행기 연결은 자동으로 고쳐지지 않습니다.
-
-**`run-notebook-deleter.cmd`를 실행**하면 실제 Python 3.10 이상이 작동하는지 확인한 다음 스크립트를 실행합니다. 실행 인자를 전달할 수도 있습니다.
+권장 분석 명령 (파일 삭제 없음):
 
 ```cmd
-run-notebook-deleter.cmd --dry-run --target-dir "C:\temp"
-run-notebook-deleter.cmd --diagnose
+py -3 verified_delete.py --analyze-protection --target-dir "C:\Windows\SysWOW64"
 ```
 
-직접 확인하려면 다음 명령의 결과를 비교하세요.
+이 명령은 파일 해시, 디지털 서명, 소유자, ACL, 서비스·프로세스·드라이버 후보, 제거 프로그램 등록 정보(명령 조회만), 자동 실행, 이벤트 로그를 **현재 PC에서 다시 조회**한 뒤 이전 보고서와 비교합니다. 수집 실패한 항목은 표시합니다.
+
+현재 파일을 과거 보고서와 비교하는 미리보기 (파일 삭제 없음):
 
 ```cmd
-where python
-python -c "print(123)"
-py -3 --version
-py -3 -u bulk_delete_agent_targets.py --dry-run --target-dir "C:\temp"
+py -3 verified_delete.py --target-dir "C:\Windows\SysWOW64"
 ```
 
-- `python -c "print(123)"`은 반드시 `123`을 출력해야 정상입니다. `Python`만 출력한다면 Python 인터프리터까지 도달하지 못한 것입니다.
-- `py -3`가 작동한다면 `python` 대신 사용하세요.
-- 두 명령이 모두 정상 실행되지 않으면 Python 3.10 이상을 설치하고, Windows **설정 → 앱 → 고급 앱 설정 → 앱 실행 별칭**에서 Python 별칭을 점검하세요.
-- EXE는 Python 설치와 별개이므로 시작에 실패한다면 `run-diagnostics.cmd`에서 EXE 항목의 종료 코드와 오류를 확인하세요.
-
-## 실행이 되지 않는 경우 (Windows)
-
-**`run-diagnostics.cmd`를 더블 클릭해 실행**하면 .py 실행에 필요한 Python을 검증하고 EXE 시작을 별도로 검사합니다. 모든 단계는 삭제를 수행하지 않습니다. 결과는 `%TEMP%\inc-notebook-deleter-diagnostic.log`에 저장되며 마지막에 창이 열린 채로 남습니다.
-
-명령행 확인 방법:
+`reference_opendrop_20261019.json` 대신 사용자 원본 ZIP도 사용할 수 있습니다. ZIP은 압축을 해제하거나 내부 파일을 실행하지 않고 읽습니다.
 
 ```cmd
-py -3 -u bulk_delete_agent_targets.py --diagnose
+py -3 verified_delete.py --analyze-protection --reference-report "OpenDrop.zip" --target-dir "C:\Windows\SysWOW64"
 ```
+
+> 보고서에 적힌 SHA-256은 **2026-10-19 당시의 스냅샷**입니다. 파일이 패치되거나 재설치되면 값이 달라질 수 있습니다. 해시 불일치만으로 악성코드라고 판정하지 않습니다.
+
+## 3. 실제 삭제 기능
+
+1. 미리보기를 실행해 `DELETE-XXXXXXXXXXXX` 확인값을 읽습니다.
+2. Windows 시스템 디렉터리 대상이라면 관리자 권한으로 CMD를 엽니다.
+3. 명시적 실행 옵션을 사용합니다.
 
 ```cmd
-.\dist\inc-notebook-deleter.exe --diagnose
+py -3 verified_delete.py --target-dir "C:\Windows\SysWOW64" --execute --confirm DELETE-XXXXXXXXXXXX
 ```
 
-- `--diagnose`: 시작 환경과 파일 존재 상태 검사, 삭제 없음.
-- `--mode check`, `--dry-run`: 삭제 없이 파일 상태만 확인.
-- `--mode delete`: 실제 삭제. 보호된 시스템 폴더는 관리자 승인 필요.
-- EXE는 관리자 권한을 무조건 요구하지 않도록 빌드됩니다. 검사 후 실제 삭제가 필요하면 관리자 권한 CMD에서 실행하세요.
-- Windows에서 한글을 출력할 때 CP1252 등 일부 코드 페이지에서는 `UnicodeEncodeError`가 발생했습니다. 실행 시 표준 출력과 오류 출력을 UTF-8로 설정하도록 수정했습니다.
-- 예기치 않은 Python 예외는 `%TEMP%\inc-notebook-deleter-error.log`에 기록됩니다.
+`DELETE-XXXXXXXXXXXX`는 프로그램에 표시되는 **실제 확인값**으로 교체해야 합니다.
 
-## 사용법
+- 허용된 네 파일 이름 밖의 대상은 삭제할 수 없습니다.
+- `--reference-report`를 별도로 지정하면 현재 SHA-256이 보고서와 **일치한 파일만 삭제 시도**합니다. 불일치하거나 해시를 읽지 못하면 실패로 기록하고 삭제하지 않습니다.
+- 실제 삭제 호출은 `Path.unlink()`이며 호출 이후에도 파일이 남았으면 절대로 성공이라고 보고하지 않습니다.
+- 현재 진단에서 확인된 ACL `Everyone: Deny Delete`가 유지되는 동안에는 실제 삭제가 `WinError 5`로 실패할 가능성이 높습니다. 이 프로그램이 해당 권한/보호 체계를 우회한다고 주장하지 않습니다.
+- 삭제 가능한 별도의 승인된 디렉터리에서 정상 파일에 대한 실제 삭제 및 성공/실패 처리 동작은 로컬 테스트로 검증했습니다.
 
-### 기본 실행 (SysWOW64 대상)
+삭제 로그는 `%LOCALAPPDATA%\IncNotebookDeleter\deletion-log.jsonl`, 읽기 전용 분석 보고서는 `%LOCALAPPDATA%\IncNotebookDeleter\reports`에 저장됩니다.
 
-인자 없이 실행하면 검사/삭제 선택 메뉴가 표시됩니다. 검사 모드는 관리자 권한 없이 사용할 수 있고 파일을 삭제하지 않습니다. 실제 삭제는 관리자 승인 및 추가 확인이 필요합니다.
+## 4. 제품 제거 등록 정보 확인
+
+분석 모드는 설치된 제품 등록 정보(HKLM/HKCU Uninstall 키)를 읽어서 제조사·제품명·제거 명령을 보고서에 표시합니다. **명령은 조회만 하며 자동 실행하지 않습니다.** 관리형 제품인 경우 제거 등록 정보가 없을 수 있고, 등록 정보가 있다고 해서 인증된 제거가 보장되는 것도 아닙니다. 제거 명령에 개인 계정 정보가 포함됐을 가능성을 고려해 공유 전 보고서를 확인하세요.
+
+## 5. 실패 후 권장 절차
+
+`WinError 5`와 명시적 ACL 삭제 거부가 함께 있으면 `taskkill`을 반복하거나 삭제 명령의 횟수를 늘리는 것은 근본 해결책이 아닙니다. 정상 프로그램이 변조됐거나 악성 동작이 의심된다면 신뢰할 수 있는 백신의 오프라인 검사, 제조사 복구/제거 도구, 필요할 경우 안전한 설치 미디어를 이용한 Windows 복구를 고려하세요. 시스템 또는 조직 정책을 변경하는 작업은 관리 주체와 조율해야 합니다.
+
+## 6. 테스트
 
 ```cmd
-run-notebook-deleter.cmd
+py -3 -m unittest -v test_verified_delete test_verified_diagnostics test_removal_assessment
 ```
 
-### 대상 디렉터리 지정
+주요 검증: 임시 파일 실제 삭제, 삭제 후 존재 검사, 범위 제한, 심볼릭 링크 보호, 재시도 오류, 기존 진단의 읽기 전용 동작, 보고서 ZIP/JSON 파서의 크기·경로·이름 검증, SHA-256 불일치 차단, ACL/서비스 상태 분류.
 
-```bash
-python bulk_delete_agent_targets.py --target-dir "C:\Windows\SysWOW64"
-```
+**검증 범위:** 로컬 임시 파일 단위 테스트. 사용자 Windows PC의 보호된 네 파일이 실제로 삭제되거나 Windows PowerShell 조사 명령이 그 PC에서 모두 성공했다고 검증한 것은 아닙니다.
 
-### 재시도 횟수 지정
+## 7. GitHub Windows EXE 빌드
 
-```bash
-python bulk_delete_agent_targets.py --retries 5
-```
+`main`에 변경을 푸시하면 GitHub Actions에서 기존·새 테스트를 실행하고 **새 `verified_delete.py`를 실행 파일 `inc-notebook-deleter.exe`로 빌드**합니다. 이 EXE는 별도의 Python 설치가 필요하지 않으며, 기본 실행은 삭제하지 않는 미리보기입니다. ZIP 아티팩트에는 기기에서 수집한 보고서가 포함되지 않습니다.
 
-### 재부팅 후 삭제 예약 (선택 사항)
+관련 실행기: `run_verified_delete.cmd`(미리보기/삭제 옵션 전달), `analyze_protection.cmd`(읽기 전용 조사), `analyze_reference.cmd`(가능할 때 로컬 과거 보고서와 비교).
 
-파일 잠금으로 즉시 삭제할 수 없다면 다음 옵션을 명시적으로 추가할 수 있습니다. 예약된 파일은 아직 삭제된 것이 아니며 Windows를 재부팅한 뒤 다시 확인해야 합니다.
-
-```powershell
-python bulk_delete_agent_targets.py --schedule-reboot
-```
-
-### 실제 삭제 없이 확인
-
-```bash
-python bulk_delete_agent_targets.py --dry-run --target-dir "C:\temp"
-```
-
-## EXE 만들기
-
-### 로컬(Windows)에서 직접 빌드
-
-```bash
-python -m pip install --upgrade pip
-pip install -r requirements-build.txt
-pyinstaller --clean --onefile --console --name inc-notebook-deleter bulk_delete_agent_targets.py
-```
-
-생성 파일:
-
-- `dist/inc-notebook-deleter.exe`
-
-### GitHub Actions로 빌드 후 내려받기
-
-1. 저장소를 GitHub에 푸시합니다.
-2. GitHub 저장소의 **Actions** 탭으로 이동합니다.
-3. **Build Windows EXE** 워크플로를 수동 실행(`workflow_dispatch`)하거나 `main` 브랜치 푸시로 자동 실행합니다.
-4. 실행이 끝나면 아티팩트 `inc-notebook-deleter-windows-exe`를 다운로드합니다.
-
-## 종료 코드
-
-- `0`: 전체 성공(또는 원래 없음)
-- `1`: 하나 이상 삭제 실패 (파일별 WinError 및 실패 원인을 확인)
-- `2`: 관리자 권한 필요
-- `3`: 즉시 삭제 실패 파일이 재부팅 시 삭제되도록 예약됨
-- `10`: 프로그램 내부 예외 (오류 로그 참조)
-
-## 대상 파일 목록
-
-다음 파일들을 지정 디렉터리에서 일괄 삭제 시도합니다.
-
-- `llrxdgfkm.exe`
-- `lqndauccd.exe`
-- `neagnhoaq.exe`
-- `nfowjxyfd.exe`
-- `ooajphjh.exe`
-- `osurugwgp.exe`
-- `qlnsmvsi.exe`
-- `qukapttp.exe`
-- `rwtyijsa.exe`
-- `ryomuigoq.exe`
-- `rzzykzbis.exe`
-- `tpnvpltow.exe`
-- `vfoxujww.exe`
-- `ylirkidg.exe`
-- `mprogramicon.ico`
-
-## WinError 5 원인 조사 (읽기 전용)
-
-```cmd
-py -3 bulk_delete_agent_targets.py --inspect-protection --target-dir "C:\Windows\SysWOW64"
-```
-
-`--inspect-protection`은 지정된 파일의 SHA256, Windows 서명 상태·서명자·버전 정보, 파일 소유자, ACL, Restart Manager가 보고한 잠금 PID 및 프로세스 경로를 표시합니다. **파일 삭제, 프로세스 종료, ACL 수정은 수행하지 않습니다.** 다른 컴퓨터로 결과를 전달할 때 사용자 이름이 포함된 경로 등 개인정보를 제거하세요.
-
-서명이 없거나 삭제가 거부되는 것만으로 악성코드임이 입증되지는 않습니다. 출처가 확인되지 않고 감염이 의심된다면 Microsoft Defender 오프라인 검사 후, 필요한 경우 신뢰할 수 있는 설치 미디어로 Windows를 재설치하는 방법을 검토하세요. 재설치 전 백업은 필수입니다.
-
-## 문제 해결
-
-- `WinError 5` (액세스 거부): 관리자 권한을 확인하고, 조직 관리 장치라면 승인된 제거 절차를 이용하세요. 프로그램은 파일 소유권/ACL을 강제로 변경하지 않습니다.
-- `WinError 32` (다른 프로세스가 사용 중): 사용 중인 EXE가 자기 자신일 때만 종료를 시도합니다. 실패하면 관리자에게 문의하거나 `--schedule-reboot`를 선택할 수 있습니다.
-- `[없음]`: 해당 이름의 파일이 실제로 없는 상태입니다. 성공적으로 삭제했다는 의미는 아닙니다.
-- `[예정]`: `--dry-run`으로 대상만 확인했으며 삭제하지 않았습니다.
-- `[예약됨]`: 아직 삭제되지 않았습니다. 재부팅 후 다시 검사하세요.
-- 링크/디렉터리처럼 일반 파일이 아닌 경로는 삭제하지 않습니다.
-
-**주의:** 파일 이름만으로 악성 파일 여부를 판별할 수 없습니다. 학교·조직에서 관리하는 필터링/보안 프로그램은 관리자 승인 없이 제거하지 마세요. 이 도구는 Windows의 접근 제어, 정책 또는 별도 변조 방지 기능을 우회하지 않습니다.
+기존 구현 및 사용법은 `docs/legacy.md`를 참조하세요.

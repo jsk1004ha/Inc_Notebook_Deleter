@@ -510,6 +510,21 @@ def main(argv: list[str] | None = None) -> int:
                 pass
 
 
+def _configure_console_encoding() -> None:
+    """Avoid UnicodeEncodeError on Windows terminals using CP1252/legacy encodings.
+
+    Text written to a redirected diagnostics file should also be UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (OSError, ValueError, TypeError):
+            pass
+
+
 def _entrypoint() -> int:
     try:
         return main()
@@ -531,4 +546,5 @@ def _entrypoint() -> int:
 
 
 if __name__ == "__main__":
+    _configure_console_encoding()
     raise SystemExit(_entrypoint())

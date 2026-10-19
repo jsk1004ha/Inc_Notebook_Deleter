@@ -34,6 +34,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -u bulk_delete_agent_targets.py --mode check --target-dir "$env:RUNNER_TEMP"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Force a legacy code page to reproduce the previous Korean-output crash.
+          $env:PYTHONIOENCODING = "cp1252"
+          python -u bulk_delete_agent_targets.py --diagnose --target-dir "$env:RUNNER_TEMP"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:\PYTHONIOENCODING
 
       - name: Build EXE
         run: |
@@ -44,6 +49,10 @@ jobs:
         run: |
           & ".\dist\inc-notebook-deleter.exe" --diagnose --target-dir "$env:RUNNER_TEMP"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PYTHONIOENCODING = "cp1252"
+          & ".\dist\inc-notebook-deleter.exe" --diagnose --target-dir "$env:RUNNER_TEMP"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:\PYTHONIOENCODING
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4

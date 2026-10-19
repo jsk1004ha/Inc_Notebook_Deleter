@@ -48,6 +48,7 @@ py -3 -u bulk_delete_agent_targets.py --diagnose
 - `--mode check`, `--dry-run`: 삭제 없이 파일 상태만 확인.
 - `--mode delete`: 실제 삭제. 보호된 시스템 폴더는 관리자 승인 필요.
 - EXE는 관리자 권한을 무조건 요구하지 않도록 빌드됩니다. 검사 후 실제 삭제가 필요하면 관리자 권한 CMD에서 실행하세요.
+- Windows에서 한글을 출력할 때 CP1252 등 일부 코드 페이지에서는 `UnicodeEncodeError`가 발생했습니다. 실행 시 표준 출력과 오류 출력을 UTF-8로 설정하도록 수정했습니다.
 - 예기치 않은 Python 예외는 `%TEMP%\inc-notebook-deleter-error.log`에 기록됩니다.
 
 ## 사용법

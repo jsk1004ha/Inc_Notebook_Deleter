@@ -77,6 +77,15 @@ class DeletionTests(unittest.TestCase):
         self.assertIn("[예정]", capture.getvalue())
         self.assertIn("실패: 0", capture.getvalue())
 
+    def test_output_encoding_configuration(self):
+        mock_out = mock.Mock()
+        mock_err = mock.Mock()
+        with mock.patch.object(app.sys, "stdout", mock_out):
+            with mock.patch.object(app.sys, "stderr", mock_err):
+                app._configure_console_encoding()
+        mock_out.reconfigure.assert_called_once_with(encoding="utf-8", errors="backslashreplace")
+        mock_err.reconfigure.assert_called_once_with(encoding="utf-8", errors="backslashreplace")
+
     def test_explicit_check_mode_does_not_remove_file(self):
         target = self.folder / app.TARGET_FILES[0]
         target.write_text("preserve", encoding="utf-8")

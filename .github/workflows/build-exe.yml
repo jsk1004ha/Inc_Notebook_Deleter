@@ -24,9 +24,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-build.txt
 
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
       - name: Build EXE
         run: |
-          pyinstaller --clean --onefile --name inc-notebook-deleter bulk_delete_agent_targets.py
+          pyinstaller --clean --onefile --uac-admin --name inc-notebook-deleter bulk_delete_agent_targets.py
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4

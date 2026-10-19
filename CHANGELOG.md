@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-19
+
+- EXE 빌드에 UAC 관리자 권한 요청 매니페스트 추가.
+- 관리자 권한 검사, 파일별 Windows 오류 코드와 실패 원인 표시.
+- 링크/폴더/비정규 대상 보호, 대상 EXE와 일치하는 잠금 프로세스만 종료.
+- `--dry-run` 상태 구분과 선택적 `--schedule-reboot` 추가.
+- Windows CI에 단위 테스트 추가.
+
 ## 2026-04-17
 
 - `bulk_delete_agent_targets.py` 추가.

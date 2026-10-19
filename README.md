@@ -19,8 +19,10 @@
 
 - Python 3.10+
 - Windows 10/11 권장
-  - Windows에서는 Restart Manager API + `taskkill`을 사용하여 잠금 프로세스 종료 후 재시도합니다.
-  - 비-Windows 환경에서는 일반 삭제만 시도합니다.
+  - Windows에서는 관리자 권한 확인, Restart Manager를 통한 잠금 확인 및 제한된 `taskkill` 재시도를 지원합니다.
+  - 잠금 프로세스는 **삭제 대상 EXE 자체가 실행 중인 경우에만** 종료를 시도합니다. 파일을 열어본 Explorer 등 다른 프로세스는 종료하지 않습니다.
+  - 시스템 디렉터리를 대상으로 할 경우 관리자 권한이 필요합니다. 조직 관리 장치는 관리자 승인 및 정책을 확인하세요.
+  - 비-Windows 환경에서는 일반 파일 삭제만 시도합니다.
 
 ### EXE 빌드
 
@@ -31,6 +33,8 @@
 ## 사용법
 
 ### 기본 실행 (SysWOW64 대상)
+
+**관리자 권한으로 실행한 CMD/PowerShell**에서 아래 명령을 사용하세요. 권한이 없을 경우 실제 삭제를 시작하지 않고 종료 코드 2를 반환합니다. 새로 빌드한 EXE는 UAC를 통해 관리자 권한을 요청합니다.
 
 ```bash
 python bulk_delete_agent_targets.py
@@ -48,6 +52,14 @@ python bulk_delete_agent_targets.py --target-dir "C:\Windows\SysWOW64"
 python bulk_delete_agent_targets.py --retries 5
 ```
 
+### 재부팅 후 삭제 예약 (선택 사항)
+
+파일 잠금으로 즉시 삭제할 수 없다면 다음 옵션을 명시적으로 추가할 수 있습니다. 예약된 파일은 아직 삭제된 것이 아니며 Windows를 재부팅한 뒤 다시 확인해야 합니다.
+
+```powershell
+python bulk_delete_agent_targets.py --schedule-reboot
+```
+
 ### 실제 삭제 없이 확인
 
 ```bash
@@ -61,7 +73,7 @@ python bulk_delete_agent_targets.py --dry-run --target-dir "C:\temp"
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements-build.txt
-pyinstaller --clean --onefile --name inc-notebook-deleter bulk_delete_agent_targets.py
+pyinstaller --clean --onefile --uac-admin --name inc-notebook-deleter bulk_delete_agent_targets.py
 ```
 
 생성 파일:
@@ -78,7 +90,9 @@ pyinstaller --clean --onefile --name inc-notebook-deleter bulk_delete_agent_targ
 ## 종료 코드
 
 - `0`: 전체 성공(또는 원래 없음)
-- `1`: 하나 이상 삭제 실패
+- `1`: 하나 이상 삭제 실패 (파일별 WinError 및 실패 원인을 확인)
+- `2`: 관리자 권한 필요
+- `3`: 즉시 삭제 실패 파일이 재부팅 시 삭제되도록 예약됨
 
 ## 대상 파일 목록
 
@@ -99,3 +113,14 @@ pyinstaller --clean --onefile --name inc-notebook-deleter bulk_delete_agent_targ
 - `vfoxujww.exe`
 - `ylirkidg.exe`
 - `mprogramicon.ico`
+
+## 문제 해결
+
+- `WinError 5` (액세스 거부): 관리자 권한을 확인하고, 조직 관리 장치라면 승인된 제거 절차를 이용하세요. 프로그램은 파일 소유권/ACL을 강제로 변경하지 않습니다.
+- `WinError 32` (다른 프로세스가 사용 중): 사용 중인 EXE가 자기 자신일 때만 종료를 시도합니다. 실패하면 관리자에게 문의하거나 `--schedule-reboot`를 선택할 수 있습니다.
+- `[없음]`: 해당 이름의 파일이 실제로 없는 상태입니다. 성공적으로 삭제했다는 의미는 아닙니다.
+- `[예정]`: `--dry-run`으로 대상만 확인했으며 삭제하지 않았습니다.
+- `[예약됨]`: 아직 삭제되지 않았습니다. 재부팅 후 다시 검사하세요.
+- 링크/디렉터리처럼 일반 파일이 아닌 경로는 삭제하지 않습니다.
+
+**주의:** 파일 이름만으로 악성 파일 여부를 판별할 수 없습니다. 학교·조직에서 관리하는 필터링/보안 프로그램은 관리자 승인 없이 제거하지 마세요. 이 도구는 Windows의 접근 제어, 정책 또는 별도 변조 방지 기능을 우회하지 않습니다.

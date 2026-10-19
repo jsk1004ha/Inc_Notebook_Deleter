@@ -39,7 +39,7 @@ class VerifiedDeleteTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertFalse(self.path.exists())
         self.assertIn('SUCCESS', out)
-        lines = [json.loads(x) for x in self.log.read_text().splitlines()]
+        lines = [json.loads(x) for x in self.log.read_text(encoding='utf-8').splitlines()]
         self.assertEqual(lines[0]['status'], 'deleted')
 
     def test_wrong_confirmation_does_not_delete(self):

@@ -77,6 +77,40 @@ class DeletionTests(unittest.TestCase):
         self.assertIn("[예정]", capture.getvalue())
         self.assertIn("실패: 0", capture.getvalue())
 
+    def test_explicit_check_mode_does_not_remove_file(self):
+        target = self.folder / app.TARGET_FILES[0]
+        target.write_text("preserve", encoding="utf-8")
+        with redirect_stdout(io.StringIO()) as captured:
+            self.assertEqual(app.main(["--mode", "check", "--target-dir", str(self.folder)]), 0)
+        self.assertEqual(target.read_text(encoding="utf-8"), "preserve")
+        self.assertIn("[시작] 모드: 검사", captured.getvalue())
+
+    def test_diagnose_overrides_delete_mode(self):
+        target = self.folder / app.TARGET_FILES[0]
+        target.write_text("preserve", encoding="utf-8")
+        with redirect_stdout(io.StringIO()) as captured:
+            self.assertEqual(app.main(["--diagnose", "--mode", "delete", "--target-dir", str(self.folder)]), 0)
+        self.assertTrue(target.exists())
+        self.assertIn("[진단 모드]", captured.getvalue())
+
+    def test_noninteractive_no_args_is_diagnostic_only(self):
+        with mock.patch.object(app.sys, "stdin", io.StringIO("")):
+            with mock.patch.object(app.sys, "argv", ["script.py"]):
+                with mock.patch.object(app, "_run_cli", return_value=0) as runner:
+                    self.assertEqual(app.main(), 0)
+        runner.assert_called_once_with(["--diagnose"])
+
+    def test_interactive_selection_default_is_safe(self):
+        class FakeConsole:
+            def isatty(self):
+                return True
+        with mock.patch.object(app.sys, "stdin", FakeConsole()):
+            with mock.patch("builtins.input", side_effect=["", ""]):
+                with mock.patch.object(app, "_run_cli", return_value=0) as runner:
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(app.main([]), 0)
+        runner.assert_called_once_with(["--diagnose"])
+
 
 if __name__ == "__main__":
     unittest.main()

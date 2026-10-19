@@ -30,11 +30,31 @@
 - Windows 환경에서 빌드 권장
   - `.exe`는 Windows에서 빌드하는 것이 가장 안정적입니다.
 
+## 실행이 되지 않는 경우 (Windows)
+
+**`run-diagnostics.cmd`를 더블 클릭해 실행**하면 .py 파일의 Python 실행 환경과 EXE 시작을 각각 검사합니다. 모든 단계는 삭제를 수행하지 않습니다. 결과는 `%TEMP%\inc-notebook-deleter-diagnostic.log`에 저장되며 마지막에 창이 열린 채로 남습니다.
+
+명령행 확인 방법:
+
+```cmd
+py -3 -u bulk_delete_agent_targets.py --diagnose
+```
+
+```cmd
+.\dist\inc-notebook-deleter.exe --diagnose
+```
+
+- `--diagnose`: 시작 환경과 파일 존재 상태 검사, 삭제 없음.
+- `--mode check`, `--dry-run`: 삭제 없이 파일 상태만 확인.
+- `--mode delete`: 실제 삭제. 보호된 시스템 폴더는 관리자 승인 필요.
+- EXE는 관리자 권한을 무조건 요구하지 않도록 빌드됩니다. 검사 후 실제 삭제가 필요하면 관리자 권한 CMD에서 실행하세요.
+- 예기치 않은 Python 예외는 `%TEMP%\inc-notebook-deleter-error.log`에 기록됩니다.
+
 ## 사용법
 
 ### 기본 실행 (SysWOW64 대상)
 
-**관리자 권한으로 실행한 CMD/PowerShell**에서 아래 명령을 사용하세요. 권한이 없을 경우 실제 삭제를 시작하지 않고 종료 코드 2를 반환합니다. 새로 빌드한 EXE는 UAC를 통해 관리자 권한을 요청합니다.
+인자 없이 실행하면 검사/삭제 선택 메뉴가 표시됩니다. 검사 모드는 관리자 권한 없이 사용할 수 있고 파일을 삭제하지 않습니다. 실제 삭제는 관리자 승인 및 추가 확인이 필요합니다.
 
 ```bash
 python bulk_delete_agent_targets.py
@@ -73,7 +93,7 @@ python bulk_delete_agent_targets.py --dry-run --target-dir "C:\temp"
 ```bash
 python -m pip install --upgrade pip
 pip install -r requirements-build.txt
-pyinstaller --clean --onefile --uac-admin --name inc-notebook-deleter bulk_delete_agent_targets.py
+pyinstaller --clean --onefile --console --name inc-notebook-deleter bulk_delete_agent_targets.py
 ```
 
 생성 파일:
@@ -93,6 +113,7 @@ pyinstaller --clean --onefile --uac-admin --name inc-notebook-deleter bulk_delet
 - `1`: 하나 이상 삭제 실패 (파일별 WinError 및 실패 원인을 확인)
 - `2`: 관리자 권한 필요
 - `3`: 즉시 삭제 실패 파일이 재부팅 시 삭제되도록 예약됨
+- `10`: 프로그램 내부 예외 (오류 로그 참조)
 
 ## 대상 파일 목록
 

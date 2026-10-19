@@ -17,6 +17,8 @@ import stat
 import time
 import subprocess
 import sys
+import tempfile
+import traceback
 from dataclasses import dataclass
 
 TARGET_FILES: tuple[str, ...] = (
@@ -395,6 +397,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="잠금 프로세스 검사 후 재시도 횟수 (기본값: 3)",
     )
     parser.add_argument("--dry-run", action="store_true", help="실제 삭제 없이 대상 확인")
+    parser.add_argument("--diagnose", action="store_true", help="실행 환경 확인. 삭제하지 않음")
+    parser.add_argument("--mode", choices=("check", "delete"), default="delete",
+                        help="check는 확인만 수행, delete는 삭제 시도")
     parser.add_argument(
         "--schedule-reboot",
         action="store_true",
@@ -403,22 +408,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run_cli(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     target_dir = args.target_dir.expanduser().resolve(strict=False)
+    check_only = args.dry_run or args.diagnose or args.mode == "check"
+    if args.diagnose:
+        print("[진단 모드] 파일 삭제 및 프로세스 종료를 수행하지 않습니다.")
+        print(f"Python: {sys.version.split()[0]}, 패키징된 EXE: {bool(getattr(sys, 'frozen', False))}")
+        print(f"실행 경로: {sys.executable}")
+        print(f"관리자 권한: {'있음' if _is_admin() else '없음'}")
+    else:
+        print(f"[시작] 모드: {'검사' if check_only else '삭제'}")
+    sys.stdout.flush()
 
-    if _is_in_windows_directory(target_dir) and not args.dry_run and not _is_admin():
+    if _is_in_windows_directory(target_dir) and not check_only and not _is_admin():
         print("[오류] Windows 시스템 디렉터리에는 관리자 권한이 필요합니다.")
         print("       관리자 권한으로 CMD/PowerShell을 실행한 후 Python 스크립트를 실행하세요.")
-        print("       빌드된 EXE는 UAC 권한 요청을 표시합니다.")
+        print("       실제 삭제 시에는 관리자의 승인이 필요합니다.")
         return 2
 
     results = delete_targets(
         target_dir=target_dir,
         retries=max(0, args.retries),
-        dry_run=args.dry_run,
-        schedule_reboot=args.schedule_reboot,
+        dry_run=check_only,
+        schedule_reboot=args.schedule_reboot and not check_only,
     )
     deleted_count = 0
     missing_count = 0
@@ -457,5 +471,64 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     return 0
 
+def _select_arguments(argv: list[str] | None) -> tuple[list[str], bool]:
+    options = list(sys.argv[1:] if argv is None else argv)
+    if options:
+        return options, False
+    if sys.stdin is None or not sys.stdin.isatty():
+        return ["--diagnose"], False
+    print("Inc Notebook Deleter")
+    print("1. 실행 환경 및 파일 검사 (삭제 없음)")
+    print("2. 파일 삭제 (관리자 승인 필요)")
+    print("0. 종료")
+    try:
+        choice = input("번호 선택 [기본 1]: ").strip() or "1"
+    except (EOFError, KeyboardInterrupt):
+        return ["--diagnose"], True
+    if choice == "2":
+        try:
+            answer = input("실제 삭제하려면 DELETE를 입력: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer == "DELETE":
+            return ["--mode", "delete"], True
+        print("삭제 취소: 진단 모드로 전환합니다.")
+    if choice == "0":
+        return ["--diagnose"], True
+    return ["--diagnose"], True
+
+
+def main(argv: list[str] | None = None) -> int:
+    options, interactive = _select_arguments(argv)
+    try:
+        return _run_cli(options)
+    finally:
+        if interactive:
+            try:
+                input("\n결과를 확인한 뒤 Enter를 눌러 닫으세요...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+
+
+def _entrypoint() -> int:
+    try:
+        return main()
+    except Exception:
+        details = traceback.format_exc()
+        print(f"[실행 오류]\n{details}", file=sys.stderr)
+        log = Path(tempfile.gettempdir()) / "inc-notebook-deleter-error.log"
+        try:
+            log.write_text(details, encoding="utf-8")
+            print(f"오류 로그: {log}", file=sys.stderr)
+        except OSError:
+            pass
+        if sys.stdin is not None and sys.stdin.isatty():
+            try:
+                input("Enter를 눌러 닫으세요...")
+            except (EOFError, KeyboardInterrupt):
+                pass
+        return 10
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_entrypoint())

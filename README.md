@@ -163,6 +163,16 @@ pyinstaller --clean --onefile --console --name inc-notebook-deleter bulk_delete_
 - `ylirkidg.exe`
 - `mprogramicon.ico`
 
+## WinError 5 원인 조사 (읽기 전용)
+
+```cmd
+py -3 bulk_delete_agent_targets.py --inspect-protection --target-dir "C:\Windows\SysWOW64"
+```
+
+`--inspect-protection`은 지정된 파일의 SHA256, Windows 서명 상태·서명자·버전 정보, 파일 소유자, ACL, Restart Manager가 보고한 잠금 PID 및 프로세스 경로를 표시합니다. **파일 삭제, 프로세스 종료, ACL 수정은 수행하지 않습니다.** 다른 컴퓨터로 결과를 전달할 때 사용자 이름이 포함된 경로 등 개인정보를 제거하세요.
+
+서명이 없거나 삭제가 거부되는 것만으로 악성코드임이 입증되지는 않습니다. 출처가 확인되지 않고 감염이 의심된다면 Microsoft Defender 오프라인 검사 후, 필요한 경우 신뢰할 수 있는 설치 미디어로 Windows를 재설치하는 방법을 검토하세요. 재설치 전 백업은 필수입니다.
+
 ## 문제 해결
 
 - `WinError 5` (액세스 거부): 관리자 권한을 확인하고, 조직 관리 장치라면 승인된 제거 절차를 이용하세요. 프로그램은 파일 소유권/ACL을 강제로 변경하지 않습니다.

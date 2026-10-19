@@ -1,4 +1,5 @@
 """Regression tests for the bounded Windows file cleanup utility."""
+import hashlib
 import io
 import tempfile
 import unittest
@@ -76,6 +77,44 @@ class DeletionTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("[예정]", capture.getvalue())
         self.assertIn("실패: 0", capture.getvalue())
+
+    def test_sha256_matches_known_data(self):
+        target = self.folder / app.TARGET_FILES[0]
+        target.write_bytes(b"known content")
+        self.assertEqual(
+            app._file_sha256(target),
+            hashlib.sha256(b"known content").hexdigest(),
+        )
+
+    def test_inspect_protection_does_not_remove_file(self):
+        target = self.folder / app.TARGET_FILES[0]
+        target.write_text("preserve", encoding="utf-8")
+        with mock.patch.object(app, "_read_file_identity", return_value=({}, "not available")):
+            with mock.patch.object(app, "_read_file_acl", return_value=("", "not available")):
+                with mock.patch.object(app, "_rm_get_locking_pids", return_value=set()):
+                    with redirect_stdout(io.StringIO()) as captured:
+                        code = app.main([
+                            "--inspect-protection", "--mode", "delete",
+                            "--target-dir", str(self.folder)
+                        ])
+        self.assertEqual(code, 0)
+        self.assertTrue(target.exists())
+        self.assertEqual(target.read_text(encoding="utf-8"), "preserve")
+        self.assertIn("SHA256", captured.getvalue())
+        self.assertIn("파일 삭제/프로세스 종료/권한 변경 없음", captured.getvalue())
+
+    def test_taskkill_failure_keeps_explanation(self):
+        target = self.folder / app.TARGET_FILES[0]
+        fake_pid = 47632
+        result = app.subprocess.CompletedProcess(
+            ["taskkill"], 1, stdout=b"", stderr=b"Access is denied"
+        )
+        with mock.patch.object(app, "_process_image_path", return_value=target):
+            with mock.patch.object(app.subprocess, "run", return_value=result):
+                notes = app._terminate_processes({fake_pid}, target)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("Access is denied", notes[0])
+        self.assertIn("1", notes[0])
 
     def test_output_encoding_configuration(self):
         mock_out = mock.Mock()

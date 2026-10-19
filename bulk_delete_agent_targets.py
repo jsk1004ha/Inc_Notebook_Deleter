@@ -9,7 +9,11 @@ References:
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
+import hashlib
+import json
+import locale
 import ctypes.wintypes as wintypes
 import os
 from pathlib import Path
@@ -255,7 +259,7 @@ def _terminate_processes(pids: set[int], target: Path) -> list[str]:
             completed = subprocess.run(
                 ["taskkill", "/PID", str(pid), "/F"],
                 check=False,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=10,
             )
@@ -263,7 +267,18 @@ def _terminate_processes(pids: set[int], target: Path) -> list[str]:
             notes.append(f"PID {pid} 종료 실패: {exc}")
         else:
             if completed.returncode:
-                notes.append(f"PID {pid}: taskkill 종료 코드 {completed.returncode}")
+                raw = completed.stderr or completed.stdout or b""
+                if isinstance(raw, bytes):
+                    message = raw.decode(
+                        locale.getpreferredencoding(False), errors="replace"
+                    ).strip()
+                else:
+                    message = str(raw).strip()
+                message = " ".join(message.split())[:350]
+                detail = f": {message}" if message else ""
+                notes.append(
+                    f"PID {pid}: taskkill 종료 코드 {completed.returncode}{detail}"
+                )
     return notes
 
 
@@ -304,11 +319,14 @@ def _force_delete_with_reason(
         return True, "", False
     if os.name == "nt":
         notes: list[str] = []
+        attempted_pids: set[int] = set()
         for _ in range(max(0, retries)):
             try:
                 locking_pids = _rm_get_locking_pids(target)
-                if locking_pids:
-                    notes.extend(_terminate_processes(locking_pids, target))
+                fresh_pids = locking_pids - attempted_pids
+                attempted_pids.update(fresh_pids)
+                if fresh_pids:
+                    notes.extend(_terminate_processes(fresh_pids, target))
             except OSError as exc:
                 notes.append(f"잠금 조회 실패: {_error_text(exc)}")
             time.sleep(0.2)
@@ -379,6 +397,159 @@ def _is_in_windows_directory(path: Path) -> bool:
     system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
     return path.resolve(strict=False).is_relative_to(system_root.resolve(strict=False))
 
+def _file_sha256(path: Path) -> str:
+    """Stream a file for incident triage; never copy or modify it."""
+    digest = hashlib.sha256()
+    with path.open("rb") as infile:
+        while True:
+            block = infile.read(256 * 1024)
+            if not block:
+                break
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _read_file_identity(path: Path) -> tuple[dict[str, str], str]:
+    """Read signature, version metadata, and owner; no file changes.
+
+    PowerShell outputs base64 UTF-8 JSON to avoid legacy console encoding
+    failures and receives the path via an environment variable to avoid
+    command injection when diagnosing unusual filenames.
+    """
+    if os.name != "nt":
+        return {}, "Windows 전용 서명 및 소유권 조회"
+
+    ps_code = r"""
+$ErrorActionPreference = 'Stop'
+$p = $env:INC_TARGET_PATH
+$signature = Get-AuthenticodeSignature -LiteralPath $p
+$item = Get-Item -LiteralPath $p
+$owner = ''
+try { $owner = (Get-Acl -LiteralPath $p -ErrorAction Stop).Owner }
+catch { $owner = '(access denied)' }
+$data = [ordered]@{
+    Signature = [string]$signature.Status
+    Signer = $(if ($null -ne $signature.SignerCertificate) {
+        [string]$signature.SignerCertificate.Subject
+    } else { '(unsigned)' })
+    Company = [string]$item.VersionInfo.CompanyName
+    Description = [string]$item.VersionInfo.FileDescription
+    Version = [string]$item.VersionInfo.FileVersion
+    Owner = $owner
+}
+$json = $data | ConvertTo-Json -Compress
+[Console]::WriteLine([Convert]::ToBase64String(
+    [Text.Encoding]::UTF8.GetBytes($json)))
+"""
+    env = dict(os.environ)
+    env["INC_TARGET_PATH"] = str(path)
+    try:
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps_code],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {}, f"서명 조회 실패: {exc}"
+    if proc.returncode:
+        return {}, f"서명 조회 실패 (PowerShell exit {proc.returncode})"
+    try:
+        encoded = proc.stdout.decode("ascii").strip().splitlines()[-1]
+        metadata = json.loads(base64.b64decode(encoded, validate=True).decode("utf-8"))
+        return {str(k): str(value) for k, value in metadata.items()}, ""
+    except (ValueError, IndexError, UnicodeError, TypeError) as exc:
+        return {}, f"서명 메타데이터 해석 실패: {exc}"
+
+
+def _read_file_acl(path: Path) -> tuple[str, str]:
+    if os.name != "nt":
+        return "", "Windows 전용 ACL 조회"
+    try:
+        proc = subprocess.run(
+            ["icacls", str(path)],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return "", f"ACL 조회 실패: {exc}"
+    preferred = locale.getpreferredencoding(False)
+    message = (proc.stdout if proc.returncode == 0 else proc.stderr).decode(
+        preferred, errors="replace"
+    ).strip()
+    if proc.returncode:
+        return "", f"icacls exit {proc.returncode}: {message[:300]}"
+    return message[:2000], ""
+
+
+def inspect_protection(target_dir: Path) -> int:
+    """Read-only evidence collection for access denied or suspected tampering."""
+    print("=" * 56)
+    print("[파일 보호 진단] 파일 삭제/프로세스 종료/권한 변경 없음")
+    print(f"대상 디렉터리: {target_dir}")
+    print(f"관리자 권한: {'있음' if _is_admin() else '없음'}")
+    print("=" * 56)
+    found = 0
+
+    for name in TARGET_FILES:
+        path = target_dir / name
+        if not _exists(path):
+            continue
+        found += 1
+        print(f"\n[발견] {name}")
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                print("  종류: 일반 파일이 아님 (링크·폴더 의심, 검사 건너뜀)")
+                continue
+            print(f"  크기: {info.st_size} bytes")
+            if hasattr(info, "st_file_attributes"):
+                print(f"  파일 특성: 0x{info.st_file_attributes:08X}")
+        except OSError as exc:
+            print(f"  파일 정보 조회 실패: {_error_text(exc)}")
+            continue
+
+        try:
+            print(f"  SHA256: {_file_sha256(path)}")
+        except OSError as exc:
+            print(f"  SHA256 조회 실패: {_error_text(exc)}")
+
+        metadata, error = _read_file_identity(path)
+        if error:
+            print(f"  {error}")
+        else:
+            for key, value in metadata.items():
+                print(f"  {key}: {value or '(unknown)'}")
+
+        acl, acl_error = _read_file_acl(path)
+        if acl_error:
+            print(f"  {acl_error}")
+        elif acl:
+            print("  접근 제어 목록 (읽기 전용):")
+            for line in acl.splitlines()[:12]:
+                print(f"    {line}")
+
+        if os.name == "nt":
+            try:
+                pids = _rm_get_locking_pids(path)
+                if not pids:
+                    print("  Restart Manager: 잠금 프로세스 보고 없음")
+                for pid in sorted(pids)[:16]:
+                    process_path = _process_image_path(pid)
+                    print(f"  잠금 프로세스 PID {pid}: {process_path or '(경로 조회 불가)'}")
+            except OSError as exc:
+                print(f"  Restart Manager 조회 실패: {_error_text(exc)}")
+    print("\n" + "=" * 56)
+    print(f"발견한 파일: {found}/{len(TARGET_FILES)}")
+    print("참고: 미서명 또는 WinError 5만으로 악성 여부가 확정되지는 않습니다.")
+    print("진단만 수행했으며 파일, 프로세스 및 권한을 변경하지 않았습니다.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bulk-delete-agent-targets",
@@ -398,6 +569,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="실제 삭제 없이 대상 확인")
     parser.add_argument("--diagnose", action="store_true", help="실행 환경 확인. 삭제하지 않음")
+    parser.add_argument(
+        "--inspect-protection",
+        action="store_true",
+        help="발견된 파일의 SHA256, 서명, 소유권, ACL, 잠금 PID 확인 (읽기 전용)",
+    )
     parser.add_argument("--mode", choices=("check", "delete"), default="delete",
                         help="check는 확인만 수행, delete는 삭제 시도")
     parser.add_argument(
@@ -412,6 +588,8 @@ def _run_cli(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     target_dir = args.target_dir.expanduser().resolve(strict=False)
+    if args.inspect_protection:
+        return inspect_protection(target_dir)
     check_only = args.dry_run or args.diagnose or args.mode == "check"
     if args.diagnose:
         print("[진단 모드] 파일 삭제 및 프로세스 종료를 수행하지 않습니다.")

@@ -12,17 +12,27 @@ echo py version exit code: !ERRORLEVEL!>> "%LOG%"
 where python >> "%LOG%" 2>&1
 python --version >> "%LOG%" 2>&1
 echo python version exit code: !ERRORLEVEL!>> "%LOG%"
-echo [2] Python script...
-if exist "bulk_delete_agent_targets.py" (
-    py -3 -u "bulk_delete_agent_targets.py" --diagnose >> "%LOG%" 2>&1
-    set "PY_RESULT=!ERRORLEVEL!"
-    echo py script exit code: !PY_RESULT!>> "%LOG%"
-    if not "!PY_RESULT!"=="0" (
-        python -u "bulk_delete_agent_targets.py" --diagnose >> "%LOG%" 2>&1
-        echo python fallback exit code: !ERRORLEVEL!>> "%LOG%"
+echo [2] Python interpreter validation...
+set "PY_EXEC="
+for /f "delims=" %%I in ('py -3 -c "print(733445)" 2^>nul') do (
+    if "%%I"=="733445" set "PY_EXEC=py -3"
+)
+if not defined PY_EXEC (
+    for /f "delims=" %%I in ('python -c "print(733445)" 2^>nul') do (
+        if "%%I"=="733445" set "PY_EXEC=python"
     )
+)
+if not defined PY_EXEC (
+    echo ERROR: Python is unavailable or is a stub that prints "Python".>> "%LOG%"
+    echo Check: where python, py -3 --version, python -c "print(123)">> "%LOG%"
 ) else (
-    echo bulk_delete_agent_targets.py not found.>> "%LOG%"
+    echo Verified interpreter: !PY_EXEC!>> "%LOG%"
+    if exist "bulk_delete_agent_targets.py" (
+        !PY_EXEC! -u "bulk_delete_agent_targets.py" --diagnose >> "%LOG%" 2>&1
+        echo Python script exit code: !ERRORLEVEL!>> "%LOG%"
+    ) else (
+        echo bulk_delete_agent_targets.py not found.>> "%LOG%"
+    )
 )
 echo [3] Packaged EXE...
 set "EXE=inc-notebook-deleter.exe"

@@ -10,6 +10,8 @@
 ## 파일
 
 - `bulk_delete_agent_targets.py`: 메인 실행 스크립트
+- `run-notebook-deleter.cmd`: 실제 Python 설치를 확인하고 실행하는 Windows 실행기
+- `run-diagnostics.cmd`: Python 및 EXE 시작 문제 진단
 - `requirements-build.txt`: EXE 빌드(PyInstaller) 의존성 목록
 - `.github/workflows/build-exe.yml`: GitHub Actions 기반 Windows EXE 자동 빌드
 
@@ -30,9 +32,34 @@
 - Windows 환경에서 빌드 권장
   - `.exe`는 Windows에서 빌드하는 것이 가장 안정적입니다.
 
+## `python`을 실행하면 `Python`만 출력될 때
+
+`python bulk_delete_agent_targets.py --dry-run` 명령이 `Python`만 출력하면 스크립트가 실행되지 않았을 가능성이 큽니다. 현재 명령이 **실제 Python 인터프리터가 아닌 Windows 앱 실행 별칭 또는 다른 프로그램**을 가리킬 수 있습니다. 코드 수정을 반복해도 실행기 연결은 자동으로 고쳐지지 않습니다.
+
+**`run-notebook-deleter.cmd`를 실행**하면 실제 Python 3.10 이상이 작동하는지 확인한 다음 스크립트를 실행합니다. 실행 인자를 전달할 수도 있습니다.
+
+```cmd
+run-notebook-deleter.cmd --dry-run --target-dir "C:\temp"
+run-notebook-deleter.cmd --diagnose
+```
+
+직접 확인하려면 다음 명령의 결과를 비교하세요.
+
+```cmd
+where python
+python -c "print(123)"
+py -3 --version
+py -3 -u bulk_delete_agent_targets.py --dry-run --target-dir "C:\temp"
+```
+
+- `python -c "print(123)"`은 반드시 `123`을 출력해야 정상입니다. `Python`만 출력한다면 Python 인터프리터까지 도달하지 못한 것입니다.
+- `py -3`가 작동한다면 `python` 대신 사용하세요.
+- 두 명령이 모두 정상 실행되지 않으면 Python 3.10 이상을 설치하고, Windows **설정 → 앱 → 고급 앱 설정 → 앱 실행 별칭**에서 Python 별칭을 점검하세요.
+- EXE는 Python 설치와 별개이므로 시작에 실패한다면 `run-diagnostics.cmd`에서 EXE 항목의 종료 코드와 오류를 확인하세요.
+
 ## 실행이 되지 않는 경우 (Windows)
 
-**`run-diagnostics.cmd`를 더블 클릭해 실행**하면 .py 파일의 Python 실행 환경과 EXE 시작을 각각 검사합니다. 모든 단계는 삭제를 수행하지 않습니다. 결과는 `%TEMP%\inc-notebook-deleter-diagnostic.log`에 저장되며 마지막에 창이 열린 채로 남습니다.
+**`run-diagnostics.cmd`를 더블 클릭해 실행**하면 .py 실행에 필요한 Python을 검증하고 EXE 시작을 별도로 검사합니다. 모든 단계는 삭제를 수행하지 않습니다. 결과는 `%TEMP%\inc-notebook-deleter-diagnostic.log`에 저장되며 마지막에 창이 열린 채로 남습니다.
 
 명령행 확인 방법:
 
@@ -57,8 +84,8 @@ py -3 -u bulk_delete_agent_targets.py --diagnose
 
 인자 없이 실행하면 검사/삭제 선택 메뉴가 표시됩니다. 검사 모드는 관리자 권한 없이 사용할 수 있고 파일을 삭제하지 않습니다. 실제 삭제는 관리자 승인 및 추가 확인이 필요합니다.
 
-```bash
-python bulk_delete_agent_targets.py
+```cmd
+run-notebook-deleter.cmd
 ```
 
 ### 대상 디렉터리 지정

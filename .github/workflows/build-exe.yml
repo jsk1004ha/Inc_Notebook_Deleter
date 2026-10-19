@@ -40,6 +40,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Remove-Item Env:\PYTHONIOENCODING
 
+      - name: Smoke test Windows CMD launcher
+        shell: pwsh
+        run: |
+          cmd.exe /d /c run-notebook-deleter.cmd --diagnose --target-dir .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build EXE
         run: |
           pyinstaller --clean --onefile --console --name inc-notebook-deleter bulk_delete_agent_targets.py
@@ -62,4 +68,5 @@ jobs:
             dist/inc-notebook-deleter.exe
             bulk_delete_agent_targets.py
             run-diagnostics.cmd
+            run-notebook-deleter.cmd
           if-no-files-found: error

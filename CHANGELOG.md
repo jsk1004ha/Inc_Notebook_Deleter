@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-19 (실행 별칭 문제 진단)
+
+- `python`이 `Python` 한 단어만 출력하고 실행하지 않는 Windows 환경을 분리 진단.
+- `run-notebook-deleter.cmd`에 실제 Python 인터프리터 실행 검사 추가.
+- `run-diagnostics.cmd`에서 비정상 실행 별칭 감지 및 실행 실패 구분.
+- CI에 Windows CMD 실행기 스모크 테스트 추가.
+
+
 ## 2026-10-19 (Windows 인코딩 오류 수정)
 
 - Windows CP1252 등 레거시 코드 페이지에서 한국어 출력 시 발생하던 `UnicodeEncodeError` 수정.
